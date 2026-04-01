@@ -59,7 +59,7 @@ def read_input_excel(cfg: AppConfig) -> Tuple[pd.DataFrame, str]:
         raise FileNotFoundError(f"输入文件不存在：{path}")
 
     sheet_names = xls.sheet_names
-    preferred = cfg.paths.input_sheet_preferred
+    preferred = cfg.paths。input_sheet_preferred
 
     if preferred in sheet_names:
         sheet = preferred
@@ -295,8 +295,8 @@ def compute_quality_flags(df: pd.DataFrame, cfg: AppConfig) -> Tuple[pd.DataFram
     # 质量问题统计
     reason_counts = (
         cleaned_raw_df.loc[cleaned_raw_df["bad_row"] == True, "bad_reason"]
-        .fillna("")
-        .astype(str)
+        。fillna("")
+        。astype(str)
     )
 
     reason_counter: Dict[str, int] = {}
@@ -361,24 +361,38 @@ def country_decision_crosstab(df_valid: pd.DataFrame) -> Tuple[pd.DataFrame, pd.
 def accuracy_tables(df_valid: pd.DataFrame) -> pd.DataFrame:
     """
     输出按 overall / decision / country / rule_hit 的 TRUE/FALSE 分布与 accuracy
+    永远返回 DataFrame（即使 df_valid 为空）
     """
     df = df_valid.copy()
+
+    # 确保必要列存在
+    for col in ["human_check_norm", "decision_norm", "country", "rule_hit"]:
+        if col not in df.columns:
+            df[col] = np.nan
+
     df["is_true"] = df["human_check_norm"] == "TRUE"
 
-    def make_group(name: str, group_col: Optional[str]) -> pd.DataFrame:
+    cols = ["group_type", "group_value", "count", "true_count", "false_count", "accuracy"]
+
+    def make_group(group_type: str, group_col: Optional[str]) -> pd.DataFrame:
+        # overall
         if group_col is None:
             total = len(df)
-            true_cnt = int(df["is_true"].sum())
+            true_cnt = int(df["is_true"].sum()) if total else 0
             false_cnt = total - true_cnt
             acc = round(true_cnt / total, 4) if total else 0.0
             return pd.DataFrame([{
-                "group_type": name,
+                "group_type": group_type,
                 "group_value": "ALL",
                 "count": total,
                 "true_count": true_cnt,
                 "false_count": false_cnt,
                 "accuracy": acc,
-            }])
+            }], columns=cols)
+
+        # 分组为空
+        if df.empty:
+            return pd.DataFrame(columns=cols)
 
         rows = []
         for val, g in df.groupby(group_col, dropna=False):
@@ -387,15 +401,18 @@ def accuracy_tables(df_valid: pd.DataFrame) -> pd.DataFrame:
             false_cnt = total - true_cnt
             acc = round(true_cnt / total, 4) if total else 0.0
             rows.append({
-                "group_type": name,
+                "group_type": group_type,
                 "group_value": str(val),
                 "count": total,
                 "true_count": true_cnt,
                 "false_count": false_cnt,
                 "accuracy": acc,
             })
-        out = pd.DataFrame(rows).sort_values(["accuracy", "count"], ascending=[True, False])
-        return out
+
+        out = pd.DataFrame(rows, columns=cols)
+        if out.empty:
+            return out
+        return out.sort_values(["accuracy", "count"], ascending=[True, False])
 
     parts = [
         make_group("overall", None),
@@ -403,7 +420,13 @@ def accuracy_tables(df_valid: pd.DataFrame) -> pd.DataFrame:
         make_group("country", "country"),
         make_group("rule_hit", "rule_hit"),
     ]
-    return pd.concat(parts, ignore_index=True)
+
+    result = pd.concat(parts, ignore_index=True)
+    # 再兜一次：确保列齐全
+    for c in cols:
+        if c not in result.columns:
+            result[c] = np.nan
+    return result[cols]
 
 
 def confusion_or_fallback(df_valid: pd.DataFrame) -> Dict[str, Any]:
