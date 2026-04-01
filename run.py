@@ -29,6 +29,8 @@ def main() -> int:
         return 0
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"[错误] {e}", file=sys.stderr)
         return 1
 
